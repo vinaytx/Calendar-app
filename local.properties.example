@@ -1,0 +1,17 @@
+## This file contains credentials and developer specific path configurations.
+## Copy this file to 'local.properties' and fill in your actual values.
+## DO NOT commit 'local.properties' to version control!
+
+# Android SDK Path (Automatically filled by Android Studio)
+# sdk.dir=C:\\Users\\your_user\\AppData\\Local\\Android\\Sdk
+
+# Telegram Bot Credentials (Obtained from @BotFather)
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ
+TELEGRAM_DEFAULT_CHAT_ID=-1001234567890
+TELEGRAM_GROUP_INVITE_LINK=https://t.me/+AbCdEfGhIjK12345
+
+# Optional APK Release Signing Credentials
+RELEASE_KEYSTORE_PATH=my-release-key.jks
+RELEASE_KEYSTORE_PASSWORD=your_keystore_password
+RELEASE_KEY_ALIAS=my-app-key
+RELEASE_KEY_PASSWORD=your_key_password

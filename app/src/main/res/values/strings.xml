@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Group Calendar</string>
+    <string name="sync_channel_name">Calendar Sync</string>
+    <string name="sync_channel_description">Notifications for calendar synchronization updates</string>
+</resources>
