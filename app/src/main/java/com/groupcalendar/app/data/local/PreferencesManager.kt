@@ -34,16 +34,18 @@ class PreferencesManager(context: Context) {
     // Bot Token (Falls back to BuildConfig if not configured by user)
     fun getBotToken(): String {
         val stored = prefs.getString(KEY_BOT_TOKEN, null)
-        return if (!stored.isNullOrBlank()) stored else BuildConfig.DEFAULT_BOT_TOKEN
+        val raw = if (!stored.isNullOrBlank()) stored else BuildConfig.DEFAULT_BOT_TOKEN
+        return sanitizeBotToken(raw)
     }
-    fun setBotToken(token: String) = prefs.edit().putString(KEY_BOT_TOKEN, token.trim()).apply()
+    fun setBotToken(token: String) = prefs.edit().putString(KEY_BOT_TOKEN, sanitizeBotToken(token)).apply()
 
     // Group Chat ID (Falls back to BuildConfig)
     fun getChatId(): String {
         val stored = prefs.getString(KEY_CHAT_ID, null)
-        return if (!stored.isNullOrBlank()) stored else BuildConfig.DEFAULT_CHAT_ID
+        val raw = if (!stored.isNullOrBlank()) stored else BuildConfig.DEFAULT_CHAT_ID
+        return sanitizeChatId(raw)
     }
-    fun setChatId(id: String) = prefs.edit().putString(KEY_CHAT_ID, id.trim()).apply()
+    fun setChatId(id: String) = prefs.edit().putString(KEY_CHAT_ID, sanitizeChatId(id)).apply()
 
     // Group Invite Link
     fun getGroupInviteLink(): String {
@@ -111,5 +113,29 @@ class PreferencesManager(context: Context) {
         private const val KEY_LAST_SYNC = "pref_last_sync"
         private const val KEY_AUTO_SYNC = "pref_auto_sync"
         private const val KEY_SYNC_INTERVAL = "pref_sync_interval"
+
+        fun sanitizeBotToken(input: String): String {
+            var token = input.trim()
+            if (token.contains("/bot")) {
+                token = token.substringAfter("/bot")
+            } else if (token.startsWith("bot", ignoreCase = true)) {
+                token = token.substring(3)
+            }
+            if (token.contains("/")) {
+                token = token.substringBefore("/")
+            }
+            return token.trim('/', ' ', '\t', '\n', '\r')
+        }
+
+        fun sanitizeChatId(input: String): String {
+            var id = input.trim().replace("\"", "").replace("'", "")
+            if (id.contains("chat_id=")) {
+                id = id.substringAfter("chat_id=")
+            }
+            if (id.contains("&")) {
+                id = id.substringBefore("&")
+            }
+            return id.trim()
+        }
     }
 }

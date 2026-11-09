@@ -21,4 +21,6 @@ app/build/
 *.aab
 *.jks
 *.keystore
+app/release/
+release/
 .navigation/

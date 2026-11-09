@@ -156,16 +156,18 @@ fun OnboardingScreen(
 
                             OutlinedTextField(
                                 value = botToken,
-                                onValueChange = { botToken = it },
+                                onValueChange = { botToken = com.groupcalendar.app.data.local.PreferencesManager.sanitizeBotToken(it) },
                                 label = { Text("Bot Token") },
+                                supportingText = { Text("Enter token only, not URL") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
                             OutlinedTextField(
                                 value = chatId,
-                                onValueChange = { chatId = it },
+                                onValueChange = { chatId = com.groupcalendar.app.data.local.PreferencesManager.sanitizeChatId(it) },
                                 label = { Text("Group Chat ID") },
+                                supportingText = { Text("e.g. -1004478792508") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )

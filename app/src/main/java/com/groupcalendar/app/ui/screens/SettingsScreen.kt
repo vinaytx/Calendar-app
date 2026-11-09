@@ -135,9 +135,10 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = botToken,
-                onValueChange = { botToken = it },
+                onValueChange = { botToken = com.groupcalendar.app.data.local.PreferencesManager.sanitizeBotToken(it) },
                 label = { Text("Telegram Bot Token") },
                 placeholder = { Text("123456789:ABCdef...") },
+                supportingText = { Text("Enter token only (e.g. 123456:ABC...), not the URL") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -155,9 +156,10 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = chatId,
-                onValueChange = { chatId = it },
+                onValueChange = { chatId = com.groupcalendar.app.data.local.PreferencesManager.sanitizeChatId(it) },
                 label = { Text("Group Chat ID") },
                 placeholder = { Text("-1001234567890") },
+                supportingText = { Text("Must start with -100 (e.g. -1004478792508)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )

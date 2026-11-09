@@ -79,7 +79,34 @@ data class TgUser(
 data class TgChat(
     @SerializedName("id") val id: Long,
     @SerializedName("title") val title: String? = null,
-    @SerializedName("type") val type: String? = null
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("pinned_message") val pinnedMessage: TgMessage? = null
+)
+
+/**
+ * Response shape shared by sendDocument / sendMessage / editMessageText —
+ * all three return the affected Message as `result`.
+ */
+data class TgMessageResponse(
+    @SerializedName("ok") val ok: Boolean,
+    @SerializedName("result") val result: TgMessage? = null,
+    @SerializedName("description") val description: String? = null
+)
+
+data class TgBooleanResponse(
+    @SerializedName("ok") val ok: Boolean,
+    @SerializedName("result") val result: Boolean? = null,
+    @SerializedName("description") val description: String? = null
+)
+
+/**
+ * One entry in the pinned manifest message: maps a member's userId to the
+ * file_id of their most recently uploaded availability document.
+ */
+data class ManifestEntry(
+    @SerializedName("fileId") val fileId: String,
+    @SerializedName("fileName") val fileName: String,
+    @SerializedName("lastUpdated") val lastUpdated: String
 )
 
 data class TgUserResponse(

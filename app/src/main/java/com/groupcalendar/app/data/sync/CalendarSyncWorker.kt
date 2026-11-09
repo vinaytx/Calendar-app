@@ -30,8 +30,8 @@ class CalendarSyncWorker(
         val syncManager = GroupCalendarSyncManager(
             context = context,
             api = RetrofitClient.engine,
-            botToken = botToken,
-            chatId = chatId
+            rawBotToken = botToken,
+            rawChatId = chatId
         )
 
         return try {

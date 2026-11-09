@@ -10,34 +10,60 @@ import retrofit2.http.*
 interface TelegramCalendarEngine {
 
     /**
-     * Upload an availability document (e.g. user_12345.json) to the target chat
+     * Upload an availability document (e.g. user_12345.json) to the target chat.
+     * Returns the sent Message so the caller can read back the document's file_id.
      */
     @Multipart
     @POST("bot{token}/sendDocument")
     suspend fun uploadAvailability(
-        @Path("token") botToken: String,
-        @Part("chat_id") chatId: RequestBody,
+        @Path(value = "token", encoded = true) botToken: String,
+        @Query("chat_id") chatId: String,
         @Part document: MultipartBody.Part,
-        @Part("caption") caption: RequestBody? = null
-    ): Response<ResponseBody>
+        @Query("caption") caption: String? = null
+    ): Response<TgMessageResponse>
 
     /**
-     * Fetch recent updates / message logs from the Telegram chat
+     * Post a new text message (used to create the pinned manifest the first time)
      */
-    @GET("bot{token}/getUpdates")
-    suspend fun getChatUpdates(
-        @Path("token") botToken: String,
-        @Query("offset") offset: Long? = null,
-        @Query("limit") limit: Int? = 100,
-        @Query("allowed_updates") allowedUpdates: String? = "[\"message\",\"channel_post\"]"
-    ): Response<TgUpdateResponse>
+    @FormUrlEncoded
+    @POST("bot{token}/sendMessage")
+    suspend fun sendMessage(
+        @Path(value = "token", encoded = true) botToken: String,
+        @Field("chat_id") chatId: String,
+        @Field("text") text: String,
+        @Field("disable_notification") disableNotification: Boolean = true
+    ): Response<TgMessageResponse>
+
+    /**
+     * Overwrite the text of an existing message (used to update the pinned manifest)
+     */
+    @FormUrlEncoded
+    @POST("bot{token}/editMessageText")
+    suspend fun editMessageText(
+        @Path(value = "token", encoded = true) botToken: String,
+        @Field("chat_id") chatId: String,
+        @Field("message_id") messageId: Long,
+        @Field("text") text: String
+    ): Response<TgMessageResponse>
+
+    /**
+     * Pin the manifest message so getChat() can always find it via pinned_message
+     */
+    @FormUrlEncoded
+    @POST("bot{token}/pinChatMessage")
+    suspend fun pinChatMessage(
+        @Path(value = "token", encoded = true) botToken: String,
+        @Field("chat_id") chatId: String,
+        @Field("message_id") messageId: Long,
+        @Field("disable_notification") disableNotification: Boolean = true
+    ): Response<TgBooleanResponse>
 
     /**
      * Query Telegram for the download path of a given file_id
      */
     @GET("bot{token}/getFile")
     suspend fun getFilePath(
-        @Path("token") botToken: String,
+        @Path(value = "token", encoded = true) botToken: String,
         @Query("file_id") fileId: String
     ): Response<TgFileResponse>
 
@@ -47,8 +73,8 @@ interface TelegramCalendarEngine {
     @GET("file/bot{token}/{file_path}")
     @Streaming
     suspend fun downloadFileDirectly(
-        @Path("token") botToken: String,
-        @Path("file_path") filePath: String
+        @Path(value = "token", encoded = true) botToken: String,
+        @Path(value = "file_path", encoded = true) filePath: String
     ): Response<ResponseBody>
 
     /**
@@ -56,7 +82,7 @@ interface TelegramCalendarEngine {
      */
     @GET("bot{token}/getMe")
     suspend fun getMe(
-        @Path("token") botToken: String
+        @Path(value = "token", encoded = true) botToken: String
     ): Response<TgUserResponse>
 
     /**
@@ -64,7 +90,7 @@ interface TelegramCalendarEngine {
      */
     @GET("bot{token}/getChat")
     suspend fun getChat(
-        @Path("token") botToken: String,
+        @Path(value = "token", encoded = true) botToken: String,
         @Query("chat_id") chatId: String
     ): Response<TgChatResponse>
 }

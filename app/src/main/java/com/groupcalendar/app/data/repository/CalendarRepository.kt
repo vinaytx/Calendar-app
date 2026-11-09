@@ -29,8 +29,8 @@ class CalendarRepository(private val context: Context) {
         return GroupCalendarSyncManager(
             context = context,
             api = RetrofitClient.engine,
-            botToken = preferences.getBotToken(),
-            chatId = preferences.getChatId()
+            rawBotToken = preferences.getBotToken(),
+            rawChatId = preferences.getChatId()
         )
     }
 

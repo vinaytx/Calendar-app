@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 val localProperties = Properties().apply {
@@ -46,7 +47,7 @@ android {
             val keyPass = localProperties.getProperty("RELEASE_KEY_PASSWORD")
 
             if (keystorePath != null && keystorePassword != null && keyAliasName != null && keyPass != null) {
-                storeFile = file(keystorePath)
+                storeFile = rootProject.file(keystorePath)
                 storePassword = keystorePassword
                 keyAlias = keyAliasName
                 keyPassword = keyPass
@@ -85,10 +86,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
     }
 
     packaging {

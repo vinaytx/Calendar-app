@@ -2,9 +2,10 @@ package com.groupcalendar.app.data.sync
 
 import android.content.Context
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.groupcalendar.app.data.api.TelegramCalendarEngine
+import com.groupcalendar.app.data.model.ManifestEntry
 import com.groupcalendar.app.data.model.MemberAvailability
-import com.groupcalendar.app.data.model.TgDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -16,14 +17,27 @@ import java.io.File
 class GroupCalendarSyncManager(
     private val context: Context,
     private val api: TelegramCalendarEngine,
-    private val botToken: String,
-    private val chatId: String
+    rawBotToken: String,
+    rawChatId: String
 ) {
+    // Colon must be percent-encoded: Retrofit leaves ':' unescaped in path segments, and
+    // a literal colon right after "bot<digits>" gets misread by OkHttp as a URI scheme,
+    // causing a "Malformed URL" resolve failure.
+    private val botToken: String = com.groupcalendar.app.data.local.PreferencesManager
+        .sanitizeBotToken(rawBotToken)
+        .replace(":", "%3A")
+    private val chatId: String = com.groupcalendar.app.data.local.PreferencesManager.sanitizeChatId(rawChatId)
     private val gson = Gson()
     private val localProfilesDir = File(context.filesDir, "member_profiles").apply { mkdirs() }
 
     /**
-     * Serializes current user's availability to JSON and uploads it as user_{id}.json to the Telegram group
+     * Serializes current user's availability to JSON, uploads it as user_{id}.json to the
+     * Telegram group, then records its file_id in the pinned manifest message.
+     *
+     * Documents are always sent *by the bot*, and Telegram's getUpdates never echoes back
+     * messages the bot itself sent - so discovery can't rely on polling updates. Instead we
+     * maintain one pinned message holding a userId -> file_id manifest, which getChat() can
+     * always read back regardless of who "sent" it.
      */
     suspend fun broadcastMyAvailability(myProfile: MemberAvailability): Result<Boolean> =
         withContext(Dispatchers.IO) {
@@ -33,38 +47,51 @@ class GroupCalendarSyncManager(
                 }
 
                 val jsonString = gson.toJson(myProfile)
-                val file = File(context.cacheDir, "${myProfile.userId}.json")
+                val fileName = "${myProfile.userId}.json"
+                val file = File(context.cacheDir, fileName)
                 file.writeText(jsonString)
 
                 // Cache own profile locally as well
-                File(localProfilesDir, "${myProfile.userId}.json").writeText(jsonString)
+                File(localProfilesDir, fileName).writeText(jsonString)
 
                 val requestFile = file.asRequestBody("application/json".toMediaTypeOrNull())
                 val body = MultipartBody.Part.createFormData("document", file.name, requestFile)
-                val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
-                val captionBody = "📅 Availability update from ${myProfile.userName}"
-                    .toRequestBody("text/plain".toMediaTypeOrNull())
+                val caption = "📅 Availability update from ${myProfile.userName}"
 
-                val response = api.uploadAvailability(
+                val uploadResponse = api.uploadAvailability(
                     botToken = botToken,
-                    chatId = chatIdBody,
+                    chatId = chatId,
                     document = body,
-                    caption = captionBody
+                    caption = caption
                 )
 
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    val errorBody = response.errorBody()?.string() ?: "Upload failed"
-                    Result.failure(Exception("Telegram API error (${response.code()}): $errorBody"))
+                if (!uploadResponse.isSuccessful || uploadResponse.body()?.ok != true) {
+                    val errorBody = uploadResponse.errorBody()?.string()
+                        ?: uploadResponse.body()?.description
+                        ?: "Upload failed"
+                    return@withContext Result.failure(Exception("Telegram API error (${uploadResponse.code()}): $errorBody"))
                 }
+
+                val uploadedFileId = uploadResponse.body()?.result?.document?.fileId
+                    ?: return@withContext Result.failure(Exception("Upload succeeded but no file_id was returned"))
+
+                updateManifestEntry(
+                    userId = myProfile.userId,
+                    entry = ManifestEntry(
+                        fileId = uploadedFileId,
+                        fileName = fileName,
+                        lastUpdated = myProfile.lastUpdated
+                    )
+                )
+
+                Result.success(true)
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
 
     /**
-     * Polls the Telegram chat log, extracts all user_*.json files, downloads them,
+     * Reads the pinned manifest message, downloads each member's latest file_id,
      * and maps each group member to their latest availability profile.
      */
     suspend fun fetchGroupAvailability(): Result<Map<String, MemberAvailability>> =
@@ -75,31 +102,12 @@ class GroupCalendarSyncManager(
                     return@withContext Result.failure(IllegalStateException("Bot token not configured"))
                 }
 
-                val updatesResponse = api.getChatUpdates(botToken)
-                if (!updatesResponse.isSuccessful || updatesResponse.body() == null) {
-                    val err = updatesResponse.errorBody()?.string() ?: "Failed to get updates"
-                    return@withContext Result.failure(Exception("Telegram updates error: $err"))
-                }
+                val (manifest, _) = fetchManifest()
 
-                val updates = updatesResponse.body()!!.result
-
-                // Find all valid JSON documents from message history
-                val documentMessages = updates
-                    .mapNotNull { it.actualMessage?.document }
-                    .filter { doc ->
-                        val name = doc.fileName ?: ""
-                        name.startsWith("user_") && name.endsWith(".json")
-                    }
-
-                // Parse documents. Chronological updates naturally overwrite older profiles in the map
-                for (doc in documentMessages) {
-                    val userId = doc.fileName?.removeSuffix(".json") ?: continue
-                    val profile = downloadMemberProfile(doc)
+                for ((userId, entry) in manifest) {
+                    val profile = downloadMemberProfile(entry.fileId, entry.fileName)
                     if (profile != null) {
-                        val existing = activeRoster[userId]
-                        if (existing == null || profile.lastUpdated >= existing.lastUpdated) {
-                            activeRoster[userId] = profile
-                        }
+                        activeRoster[userId] = profile
                     }
                 }
 
@@ -110,26 +118,68 @@ class GroupCalendarSyncManager(
         }
 
     /**
+     * Reads the chat's pinned message and parses it as a userId -> ManifestEntry map.
+     * Returns the parsed manifest alongside the pinned message's id (null if there isn't one yet).
+     */
+    private suspend fun fetchManifest(): Pair<Map<String, ManifestEntry>, Long?> {
+        val chatResponse = api.getChat(botToken, chatId)
+        val pinned = chatResponse.body()?.result?.pinnedMessage
+        val text = pinned?.text
+        val messageId = pinned?.messageId
+        if (messageId == null || text.isNullOrBlank()) {
+            return emptyMap<String, ManifestEntry>() to null
+        }
+
+        val manifest: Map<String, ManifestEntry> = try {
+            val type = object : TypeToken<Map<String, ManifestEntry>>() {}.type
+            gson.fromJson(text, type) ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+        return manifest to messageId
+    }
+
+    /**
+     * Merges a single member's entry into the shared manifest and persists it:
+     * edits the existing pinned message if there is one, otherwise sends and pins a new one.
+     */
+    private suspend fun updateManifestEntry(userId: String, entry: ManifestEntry) {
+        val (manifest, pinnedMessageId) = fetchManifest()
+        val updatedManifest = manifest + (userId to entry)
+        val manifestJson = gson.toJson(updatedManifest)
+
+        if (pinnedMessageId != null) {
+            api.editMessageText(botToken, chatId, pinnedMessageId, manifestJson)
+        } else {
+            val sendResponse = api.sendMessage(botToken, chatId, manifestJson)
+            val newMessageId = sendResponse.body()?.result?.messageId
+            if (newMessageId != null) {
+                api.pinChatMessage(botToken, chatId, newMessageId)
+            }
+        }
+    }
+
+    /**
      * Downloads and parses an availability profile JSON file by file_id
      */
-    private suspend fun downloadMemberProfile(doc: TgDocument): MemberAvailability? =
+    private suspend fun downloadMemberProfile(fileId: String, fileName: String?): MemberAvailability? =
         withContext(Dispatchers.IO) {
             try {
-                val pathResponse = api.getFilePath(botToken, doc.fileId)
+                val pathResponse = api.getFilePath(botToken, fileId)
                 val filePath = pathResponse.body()?.result?.filePath ?: return@withContext null
 
                 val fileContentResponse = api.downloadFileDirectly(botToken, filePath)
                 val jsonString = fileContentResponse.body()?.string() ?: return@withContext null
 
                 // Save locally for offline cache
-                doc.fileName?.let { name ->
+                fileName?.let { name ->
                     File(localProfilesDir, name).writeText(jsonString)
                 }
 
                 gson.fromJson(jsonString, MemberAvailability::class.java)
             } catch (e: Exception) {
                 // If network fails, attempt to read from local disk cache
-                val cachedFile = doc.fileName?.let { File(localProfilesDir, it) }
+                val cachedFile = fileName?.let { File(localProfilesDir, it) }
                 if (cachedFile != null && cachedFile.exists()) {
                     try {
                         gson.fromJson(cachedFile.readText(), MemberAvailability::class.java)
