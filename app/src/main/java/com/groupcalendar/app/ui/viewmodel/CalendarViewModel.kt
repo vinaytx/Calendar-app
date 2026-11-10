@@ -67,6 +67,22 @@ class CalendarViewModel(application: Application) : AndroidViewModel(application
         _selectedDate.value = Date()
     }
 
+    fun nextWeek() {
+        val cal = Calendar.getInstance().apply {
+            time = _selectedDate.value
+            add(Calendar.DAY_OF_YEAR, 7)
+        }
+        _selectedDate.value = cal.time
+    }
+
+    fun prevWeek() {
+        val cal = Calendar.getInstance().apply {
+            time = _selectedDate.value
+            add(Calendar.DAY_OF_YEAR, -7)
+        }
+        _selectedDate.value = cal.time
+    }
+
     fun addBusySlot(startIso: String, endIso: String, title: String?) {
         viewModelScope.launch {
             val currentSlots = myProfileState.value.busySlots.toMutableList()
@@ -149,7 +165,19 @@ class CalendarViewModel(application: Application) : AndroidViewModel(application
         preferences.setSyncIntervalMinutes(syncInterval)
 
         repository.refreshMyProfile()
-        _statusMessage.value = "Settings saved successfully!"
+
+        viewModelScope.launch {
+            if (preferences.isConfigured()) {
+                val result = repository.broadcastMyAvailability()
+                _statusMessage.value = if (result.isSuccess) {
+                    "Settings saved and synced to the group!"
+                } else {
+                    "Settings saved locally. (Broadcast failed: ${result.exceptionOrNull()?.message})"
+                }
+            } else {
+                _statusMessage.value = "Settings saved successfully!"
+            }
+        }
     }
 
     fun triggerApkUpdate(apkUrl: String) {

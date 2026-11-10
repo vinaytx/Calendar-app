@@ -15,9 +15,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.groupcalendar.app.ui.components.AvailabilityTimeline
+import com.groupcalendar.app.ui.components.CalendarViewMode
+import com.groupcalendar.app.ui.components.GroupCalendarTable
 import com.groupcalendar.app.ui.viewmodel.CalendarViewModel
-import com.groupcalendar.app.util.DateTimeUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,9 +32,7 @@ fun HomeScreen(
     val statusMessage by viewModel.statusMessage.collectAsState()
     val myProfile by viewModel.myProfileState.collectAsState()
 
-    val targetDateString = remember(selectedDate) {
-        DateTimeUtils.formatDateOnly(selectedDate)
-    }
+    var viewMode by remember { mutableStateOf(CalendarViewMode.DAY) }
 
     Scaffold(
         topBar = {
@@ -113,53 +111,16 @@ fun HomeScreen(
                 }
             }
 
-            // Date Navigation Bar
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { viewModel.prevDay() }) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Day")
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = DateTimeUtils.formatDisplayDate(selectedDate),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        TextButton(
-                            onClick = { viewModel.today() },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text(text = "Jump to Today", fontSize = 11.sp)
-                        }
-                    }
-
-                    IconButton(onClick = { viewModel.nextDay() }) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "Next Day")
-                    }
-                }
-            }
-
-            // Dynamic Timeline Gantt Chart Component
-            AvailabilityTimeline(
+            // Selectable, sortable roster table (Day or Week)
+            GroupCalendarTable(
                 roster = roster,
-                targetDateString = targetDateString,
-                currentUserId = myProfile.userId,
+                myProfile = myProfile,
+                selectedDate = selectedDate,
+                viewMode = viewMode,
+                onViewModeChange = { viewMode = it },
+                onPrev = { if (viewMode == CalendarViewMode.DAY) viewModel.prevDay() else viewModel.prevWeek() },
+                onNext = { if (viewMode == CalendarViewMode.DAY) viewModel.nextDay() else viewModel.nextWeek() },
+                onToday = { viewModel.today() },
                 modifier = Modifier.weight(1f)
             )
         }

@@ -48,67 +48,93 @@ object DateTimeUtils {
     }
 
     /**
-     * Given a roster of members and a target date, finds mutual free time intervals
-     * between 08:00 and 22:00.
+     * Half-hour occupancy bitmap for one member's busy slots on a given date, clipped to
+     * [startHour, endHour). Index i represents the half-hour starting at startHour*60 + i*30.
      */
-    fun findCommonFreeSlots(
-        roster: Collection<MemberAvailability>,
-        targetDateString: String
-    ): List<TimeSlot> {
-        if (roster.isEmpty()) return emptyList()
-
-        // Daily working window: 08:00 to 22:00 (14 hours * 2 = 28 half-hour blocks)
-        val numBlocks = 28 // 30-minute intervals
-        val busyBlock = BooleanArray(numBlocks) { false }
+    fun halfHourBitmap(
+        slots: List<TimeSlot>,
+        targetDateString: String,
+        startHour: Int,
+        endHour: Int
+    ): BooleanArray {
+        val numBlocks = (endHour - startHour) * 2
+        val bits = BooleanArray(numBlocks)
 
         val startOfDayMillis = try {
-            isoFormat.parse("${targetDateString}T08:00:00")?.time ?: return emptyList()
+            isoFormat.parse("${targetDateString}T${"%02d".format(startHour)}:00:00")?.time ?: return bits
         } catch (e: Exception) {
-            return emptyList()
+            return bits
         }
+        val halfHourMillis = 30 * 60 * 1000L
 
-        val thirtyMinutesMillis = 30 * 60 * 1000L
+        for (slot in slots) {
+            val start = parseIso(slot.start)?.time ?: continue
+            val end = parseIso(slot.end)?.time ?: continue
 
-        for (member in roster) {
-            for (slot in member.busySlots) {
-                val start = parseIso(slot.start)?.time ?: continue
-                val end = parseIso(slot.end)?.time ?: continue
-
-                for (i in 0 until numBlocks) {
-                    val blockStart = startOfDayMillis + (i * thirtyMinutesMillis)
-                    val blockEnd = blockStart + thirtyMinutesMillis
-
-                    // If slot overlaps this block
-                    if (start < blockEnd && end > blockStart) {
-                        busyBlock[i] = true
-                    }
+            for (i in 0 until numBlocks) {
+                val blockStart = startOfDayMillis + i * halfHourMillis
+                val blockEnd = blockStart + halfHourMillis
+                if (start < blockEnd && end > blockStart) {
+                    bits[i] = true
                 }
             }
         }
+        return bits
+    }
 
-        // Build continuous free intervals
-        val freeSlots = mutableListOf<TimeSlot>()
-        var freeStartBlock: Int? = null
-
-        for (i in 0 until numBlocks) {
-            if (!busyBlock[i]) {
-                if (freeStartBlock == null) freeStartBlock = i
-            } else {
-                if (freeStartBlock != null) {
-                    val sTime = Date(startOfDayMillis + freeStartBlock * thirtyMinutesMillis)
-                    val eTime = Date(startOfDayMillis + i * thirtyMinutesMillis)
-                    freeSlots.add(TimeSlot(formatIso(sTime), formatIso(eTime), "All Free"))
-                    freeStartBlock = null
-                }
+    /**
+     * Half-hour bitmap that is true wherever ANY of the given members is busy.
+     */
+    fun combinedBusyBitmap(
+        members: Collection<MemberAvailability>,
+        targetDateString: String,
+        startHour: Int,
+        endHour: Int
+    ): BooleanArray {
+        val numBlocks = (endHour - startHour) * 2
+        val combined = BooleanArray(numBlocks)
+        for (member in members) {
+            val bits = halfHourBitmap(member.busySlots, targetDateString, startHour, endHour)
+            for (i in 0 until numBlocks) {
+                if (bits[i]) combined[i] = true
             }
         }
+        return combined
+    }
 
-        if (freeStartBlock != null) {
-            val sTime = Date(startOfDayMillis + freeStartBlock * thirtyMinutesMillis)
-            val eTime = Date(startOfDayMillis + numBlocks * thirtyMinutesMillis)
-            freeSlots.add(TimeSlot(formatIso(sTime), formatIso(eTime), "All Free"))
+    /**
+     * Minutes a member is free within [startHour, endHour) on the given date.
+     */
+    fun freeMinutesForDate(
+        member: MemberAvailability,
+        targetDateString: String,
+        startHour: Int,
+        endHour: Int
+    ): Int {
+        val bits = halfHourBitmap(member.busySlots, targetDateString, startHour, endHour)
+        val busyBlocks = bits.count { it }
+        return (bits.size - busyBlocks) * 30
+    }
+
+    /**
+     * The seven dates (Monday through Sunday) of the week containing [date].
+     */
+    fun datesOfWeek(date: Date): List<Date> {
+        val cal = Calendar.getInstance().apply { time = date }
+        val dow = cal.get(Calendar.DAY_OF_WEEK) // SUNDAY=1 .. SATURDAY=7
+        val diffToMonday = if (dow == Calendar.SUNDAY) -6 else Calendar.MONDAY - dow
+        cal.add(Calendar.DAY_OF_YEAR, diffToMonday)
+        return (0 until 7).map { offset ->
+            val d = cal.clone() as Calendar
+            d.add(Calendar.DAY_OF_YEAR, offset)
+            d.time
         }
+    }
 
-        return freeSlots
+    private val weekRangeFormat = SimpleDateFormat("MMM d", Locale.getDefault())
+
+    fun formatWeekRange(date: Date): String {
+        val week = datesOfWeek(date)
+        return "${weekRangeFormat.format(week.first())} – ${weekRangeFormat.format(week.last())}"
     }
 }
